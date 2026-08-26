@@ -50,15 +50,37 @@ jobs:
 
               Write-TestLog "Screen captured into memory. Byte array length: $($bytes.Length) bytes."
 
-              Write-TestLog "Compiling Native C# Memory OCR Bridge from file..."
-              $csPath = "$PWD\\.github\\scripts\\OcrBridge.cs"
-              $code = Get-Content -Path $csPath -Raw
-              
-              # 兼容 PowerShell 7+ 的 Add-Type 编译语法
-              Add-Type -TypeDefinition $code -Language CSharp
+              Write-TestLog "Loading WinRT OCR Assemblies into PowerShell..."
+              $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType=WindowsRuntime]
+              $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
+              $null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType=WindowsRuntime]
+              $null = [Windows.Globalization.Language, Windows.Globalization, ContentType=WindowsRuntime]
 
-              Write-TestLog "Executing C# WinRT Memory OCR Bridge..."
-              $ocrText = [MemoryOcrBridge]::DoOcrFromBytes($bytes)
+              Write-TestLog "Converting byte array to WinRT IRandomAccessStream..."
+              $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+              $writer = New-Object Windows.Storage.Streams.DataWriter($stream)
+              $writer.WriteBytes($bytes)
+              $null = $writer.StoreAsync().AsTask().GetAwaiter().GetResult()
+              $null = $writer.FlushAsync().AsTask().GetAwaiter().GetResult()
+              $writer.DetachStream()
+              $stream.Seek(0)
+
+              Write-TestLog "Decoding image and executing WinRT OCR Engine..."
+              $decoderTask = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).AsTask()
+              $decoder = $decoderTask.GetAwaiter().GetResult()
+
+              $softBmpTask = $decoder.GetSoftwareBitmapAsync().AsTask()
+              $softBmp = $softBmpTask.GetAwaiter().GetResult()
+
+              $lang = New-Object Windows.Globalization.Language("en-US")
+              $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+              if (-not $engine) {
+                  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+              }
+
+              $ocrResultTask = $engine.RecognizeAsync($softBmp).AsTask()
+              $ocrResult = $ocrResultTask.GetAwaiter().GetResult()
+              $ocrText = $ocrResult.Text
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
               if ($ocrText) {
