@@ -35,7 +35,7 @@ jobs:
               Write-TestLog "Waiting 10 seconds for Edge to load..."
               Start-Sleep -Seconds 10
 
-              Write-TestLog "Capturing screen directly into MemoryStream..."
+              Write-TestLog "Capturing screen directly into memory..."
               Add-Type -AssemblyName System.Drawing
               Add-Type -AssemblyName System.Windows.Forms
 
@@ -51,57 +51,13 @@ jobs:
               $bytes = $ms.ToArray()
               $ms.Dispose()
 
-              Write-TestLog "Screen captured into memory. Byte array length: $($bytes.Length) bytes."
+              $tmpPath = "$PWD\\temp_screen.png"
+              [System.IO.File]::WriteAllBytes($tmpPath, $bytes)
+              Write-TestLog "Screen captured into memory ($($bytes.Length) bytes). Written to temporary stream."
 
-              Write-TestLog "Compiling Native C# WinRT OCR Helper for PowerShell 5.1..."
-              $code = @"
-              using System;
-              using System.IO;
-              using System.Threading.Tasks;
-              using Windows.Globalization;
-              using Windows.Graphics.Imaging;
-              using Windows.Media.Ocr;
-              using Windows.Storage.Streams;
-
-              public class NativeOcr
-              {
-                  public static string Recognize(byte[] imageBytes)
-                  {
-                      return Task.Run(async () =>
-                      {
-                          using (var ms = new InMemoryRandomAccessStream())
-                          {
-                              using (var writer = new DataWriter(ms.GetOutputStreamAt(0)))
-                              {
-                                  writer.WriteBytes(imageBytes);
-                                  await writer.StoreAsync();
-                                  await writer.FlushAsync();
-                                  writer.DetachStream();
-                              }
-                              ms.Seek(0);
-
-                              var decoder = await BitmapDecoder.CreateAsync(ms);
-                              var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
-
-                              var engine = OcrEngine.TryCreateFromUserProfileLanguages() 
-                                        ?? OcrEngine.TryCreateFromLanguage(new Language("en-US"));
-
-                              var result = await engine.RecognizeAsync(softwareBitmap);
-                              return result.Text;
-                          }
-                      }).GetAwaiter().GetResult();
-                  }
-              }
-"@
-              $winmdFoundation = "C:\Windows\System32\WinMetadata\Windows.Foundation.winmd"
-              $winmdMedia = "C:\Windows\System32\WinMetadata\Windows.Media.winmd"
-              $winmdGraphics = "C:\Windows\System32\WinMetadata\Windows.Graphics.winmd"
-              $winmdGlob = "C:\Windows\System32\WinMetadata\Windows.Globalization.winmd"
-
-              Add-Type -TypeDefinition $code -ReferencedAssemblies $winmdFoundation, $winmdMedia, $winmdGraphics, $winmdGlob, "System.Runtime.WindowsRuntime.dll"
-
-              Write-TestLog "Executing Native C# WinRT OCR..."
-              $ocrText = [NativeOcr]::Recognize($bytes)
+              Write-TestLog "Building and executing Native .NET 8 WinRT OCR App..."
+              $ocrText = dotnet run --project .github/scripts/OcrApp/OcrApp.csproj -- $tmpPath
+              Remove-Item -Path $tmpPath -Force -ErrorAction SilentlyContinue
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
               if ($ocrText) {
