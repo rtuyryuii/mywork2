@@ -1,0 +1,20 @@
+﻿================ In-Memory OCR Test Start ================
+2026-08-26 17:16:23 - Launching Microsoft Edge...
+2026-08-26 17:16:24 - Waiting 10 seconds for Edge to load...
+2026-08-26 17:16:34 - Capturing screen directly into System.IO.MemoryStream...
+2026-08-26 17:16:35 - Screen captured into memory. Byte array length: 264614 bytes.
+2026-08-26 17:16:35 - Loading WinRT OCR assemblies...
+2026-08-26 17:16:35 - Converting byte array to WinRT InMemoryRandomAccessStream...
+2026-08-26 17:16:36 - ERROR: An exception occurred during memory OCR execution!
+2026-08-26 17:16:36 - Exception Message: Exception calling "Invoke" with "2" argument(s): "Late bound operations cannot be performed on types or methods for which ContainsGenericParameters is true."
+2026-08-26 17:16:36 - Exception Details:
+Exception calling "Invoke" with "2" argument(s): "Late bound operations cannot be performed on types or methods for 
+which ContainsGenericParameters is true."
+At D:\a\_temp\a2d68365-96fa-4264-9960-38256d112c60.ps1:23 char:9
++         $task = $asTaskMethod.Invoke($null, @($asyncOp))
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodInvocationException
+    + FullyQualifiedErrorId : InvalidOperationException
+ 
+
+2026-08-26 17:16:36 - ================ In-Memory OCR Test Ended ================

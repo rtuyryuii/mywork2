@@ -1,0 +1,15 @@
+﻿=== OCR SUCCESS ===
+Create your Microsoft account
+C https://signup.live.com/?lic= 1
+Microsoft
+Create your Microsoft account
+Enter your email address.
+1993
+O Enter your email address in the format: someone@example.com.
+Already have an account? Sign in
+Help and feedback Terms of use
+Privacy and cookies
+if this is Lærn
+Q Search
+5:57 AM
+8/26/2026

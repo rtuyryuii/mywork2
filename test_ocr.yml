@@ -1,0 +1,95 @@
+name: Test Native OCR Only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ocr-test:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Ensure English OCR Language Pack is Installed
+      shell: powershell
+      run: |
+        try {
+            $capability = Get-WindowsCapability -Online | Where-Object Name -like "Language.Basic~~~en-US*"
+            if ($capability.State -ne "Installed") {
+                Add-WindowsCapability -Online -Name "Language.Basic~~~en-US~0.0.1.0"
+            }
+        } catch {
+            Write-Host "Language pack check skipped: $_"
+        }
+
+    - name: Execute OCR Recognition Test
+      shell: powershell
+      run: |
+        $ImgPath = Join-Path $env:GITHUB_WORKSPACE "shot_20260826_055738_0112.png"
+        $TxtPath = Join-Path $env:GITHUB_WORKSPACE "shot_20260826_055738_0112.txt"
+
+        try {
+            if (-not (Test-Path $ImgPath)) {
+                throw "Image file not found: $ImgPath"
+            }
+
+            Add-Type -AssemblyName System.Runtime.WindowsRuntime
+            $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { 
+                $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' 
+            })[0]
+
+            function Await-WinRt($WinRtTask, $ResultType) {
+                $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+                $netTask = $asTask.Invoke($null, @($WinRtTask))
+                $netTask.Wait(-1) | Out-Null
+                return $netTask.Result
+            }
+
+            $fileAsync = [Windows.Storage.StorageFile]::GetFileFromPathAsync($ImgPath)
+            $file = Await-WinRt $fileAsync ([Windows.Storage.StorageFile])
+
+            $streamAsync = $file.OpenAsync([Windows.Storage.FileAccessMode]::Read)
+            $stream = Await-WinRt $streamAsync ([Windows.Storage.Streams.IRandomAccessStream])
+
+            $decoderAsync = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)
+            $decoder = Await-WinRt $decoderAsync ([Windows.Graphics.Imaging.BitmapDecoder])
+
+            $bitmapAsync = $decoder.GetSoftwareBitmapAsync()
+            $softwareBitmap = Await-WinRt $bitmapAsync ([Windows.Graphics.Imaging.SoftwareBitmap])
+
+            $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage([Windows.Globalization.Language]::new("en-US"))
+            if (-not $engine) {
+                $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+            }
+
+            $ocrAsync = $engine.RecognizeAsync($softwareBitmap)
+            $ocrResult = Await-WinRt $ocrAsync ([Windows.Media.Ocr.OcrResult])
+
+            $lines = @("=== OCR SUCCESS ===")
+            foreach ($line in $ocrResult.Lines) {
+                $lines += $line.Text
+            }
+            $lines -join "`r`n" | Set-Content -Path $TxtPath -Encoding UTF8
+
+        } catch {
+            $errDetails = "=== OCR FAILED ===`r`nTimestamp: $(Get-Date)`r`nError: $_`r`nStacktrace:`r`n$($_.ScriptStackTrace)"
+            $errDetails | Set-Content -Path $TxtPath -Encoding UTF8
+        }
+
+    - name: Commit and Push Result
+      shell: powershell
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add shot_20260826_055738_0112.txt
+        if (git status --porcelain) {
+            git commit -m "chore: update ocr test result txt [skip ci]"
+            try {
+                git push origin HEAD:${{ github.ref_name }}
+            } catch {
+                Write-Host "Push skipped or failed safely."
+            }
+        } else {
+            Write-Host "No changes to commit."
+        }

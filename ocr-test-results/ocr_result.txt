@@ -1,0 +1,20 @@
+﻿================ In-Memory OCR Test Start ================
+2026-08-26 17:10:22 - Launching Microsoft Edge...
+2026-08-26 17:10:23 - Waiting 10 seconds for Edge to load...
+2026-08-26 17:10:33 - Capturing screen directly into System.IO.MemoryStream...
+2026-08-26 17:10:34 - Screen captured into memory. Byte array length: 264615 bytes.
+2026-08-26 17:10:34 - Loading WinRT OCR assemblies...
+2026-08-26 17:10:34 - Converting byte array to WinRT InMemoryRandomAccessStream...
+2026-08-26 17:10:34 - ERROR: An exception occurred during memory OCR execution!
+2026-08-26 17:10:34 - Exception Message: Method invocation failed because [Windows.Storage.Streams.DataWriterStoreOperation] does not contain a method named 'AsTask'.
+2026-08-26 17:10:34 - Exception Details:
+Method invocation failed because [Windows.Storage.Streams.DataWriterStoreOperation] does not contain a method named 
+'AsTask'.
+At D:\a\_temp\94dafa3f-f146-411e-bdb1-df9978aca3b1.ps1:49 char:5
++     $storeTask = $writer.StoreAsync().AsTask()
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : MethodNotFound
+ 
+
+2026-08-26 17:10:34 - ================ In-Memory OCR Test Ended ================

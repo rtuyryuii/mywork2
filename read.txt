@@ -1,0 +1,80 @@
+======== 本地 gh_token 环境仓库目录结构 ========
+1. ~/mywork$i/account.sh 随机用户名生成脚本
+2. ~/mywork$i/names.txt 用户名模板
+3. ~/mywork$i/test_edge_run.ps1 基础环境操作脚本
+4. ~/mywork$i/test_edge_click.ps1 具体点击操作脚本
+5. ~/mywork$i/.github/workflows/test_edge.yml actions 启动引导
+6. ~/mywork$i/read.txt 说明文件
+
+======== 第一部分：初始化环境与 Git 身份（框架基础）========
+
+# 1. 本地写入测试 Token（后续对接 D1 时，由 Worker 动态读取）
+echo 'ghp_YOUR_LOCAL_TOKEN_HERE' > ~/gh_token.txt
+
+# 2. 从本地文件读取 token 并登录 GitHub CLI
+gh auth login --with-token < ~/gh_token.txt
+
+# 3. 提取用户名与邮箱，写入本地配置（供 Git 及 API 拼接使用）
+gh api user --jq ".login" > ~/gh_name.txt
+gh api user/emails --jq ".[] | select(.primary) | .email" > ~/gh_email.txt
+
+# 4. 配置 Git 全局提交身份
+git config --global user.email "$(cat ~/gh_email.txt | tr -d '\r\n ')"
+git config --global user.name "$(cat ~/gh_name.txt | tr -d '\r\n ')"
+
+
+
+======== 第二部分（可选）：新建升号仓库 + 纯占位推送（独立 Worker 模块）========
+
+# 1. 自动计算最大编号并 +1（如 mywork5 -> mywork6）
+OLD_DIR=$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename)
+NUM=$(echo "$OLD_DIR" | sed 's/[^0-9]*//g')
+[ -z "$NUM" ] && NUM=0
+NEW_DIR="mywork$((NUM + 1))"
+
+# 2. 复制本地代码至新目录并重置 Git
+cd ~ && cp -r "$OLD_DIR" "$NEW_DIR" && cd "$NEW_DIR" && rm -rf .git && git init
+
+# 3. 本地放心修改/调优脚本（如更新 test_edge_click.ps1 等）
+# echo '***' > test.sh
+
+# 4. 仅提交 README.md 完成远程新建与纯占位（隔离未验证的完整代码）
+echo "hello world" > README.md
+git branch -M main && git add README.md && git commit -m "chore: initial placeholder"
+gh repo create "$NEW_DIR" --public --source=. --remote=origin --push
+
+
+
+======== 第三部分：日常流水线（全量强推 / 触发 / 监控 / 产物 - Cron Worker 模块）========
+
+# --- 【阶段 A：本地开发环境执行】 ---
+
+# 1. 自动锁定进入当前最大编号仓库
+cd ~/$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename)
+
+# 2. 强推完整代码，覆盖远程占位库
+git add -A && git reset $(git commit-tree $(git write-tree) -m "chore: update full codebase") && git push origin main --force
+
+# 3. 触发 GitHub Actions Workflow
+cd ~/$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename) && gh workflow run test_edge.yml --repo "$(cat ~/gh_name.txt | tr -d '\r\n ')/$(basename $(pwd))"
+
+
+# --- 【阶段 B：Cloud Shell 环境执行（省流量/免下载大文件到本地）】 ---
+
+# 4. Cloud Shell 自动对齐远程最大编号仓库，并 Clone 切入该目录
+GH_USER=$(cat ~/gh_name.txt | tr -d '\r\n ') && MAX_REPO=$(gh repo list "$GH_USER" --limit 100 --json name -q '.[].name' | grep -E '^mywork[0-9]*$' | sort -V | tail -n 1) && cd ~ && rm -rf "$MAX_REPO" && gh repo clone "${GH_USER}/${MAX_REPO}" "$MAX_REPO" && cd "$MAX_REPO"
+
+# 5. 实时监控运行日志
+sleep 5 && gh run watch $(gh run list --repo "$(cat ~/gh_name.txt | tr -d '\r\n ')/$(basename $(pwd))" --limit 1 --json databaseId -q '.[0].databaseId')
+
+# 6. 若运行失败，一键查看报错
+cd ~/$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename) && gh run view $(gh run list --repo "$(cat ~/gh_name.txt | tr -d '\r\n ')/$(basename $(pwd))" --limit 1 --json databaseId -q '.[0].databaseId') --repo "$(cat ~/gh_name.txt | tr -d '\r\n ')/$(basename $(pwd))" --log-failed
+
+# 7. 拉取产物、解压几百张图片并查看运行日志（全在 Cloud Shell 高速网络完成）
+cd ~/$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename) && git pull origin main && unzip -qo scrot_png.zip && ls -l scrot_png/ && cat test_edge_click.log
+
+# 8. 自动定位最新仓库，查看最近 5 次 Actions 的运行状态（含 Status、Conclusion、耗时）
+cd ~/$(ls -d ~/mywork* 2>/dev/null | sort -V | tail -n 1 | xargs basename) && gh run list --repo "$(cat ~/gh_name.txt | tr -d '\r\n ')/$(basename $(pwd))" --limit 5
+
+# 9. 一键清空“所有卡死/排队中”的任务
+GH_USER=$(cat ~/gh_name.txt | tr -d '\r\n ') && REPO_NAME=$(basename $(pwd)) && gh run list --repo "${GH_USER}/${REPO_NAME}" --status in_progress --json databaseId -q '.[].databaseId' | xargs -r -I {} gh run cancel {} --repo "${GH_USER}/${REPO_NAME}"
