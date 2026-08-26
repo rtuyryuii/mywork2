@@ -14,7 +14,7 @@ jobs:
       - name: Launch Edge and Run Memory-Only OCR Test
         shell: powershell
         run: |
-          $logFile = "$PWD\ocr_result.txt"
+          $logFile = "$PWD\\ocr_result.txt"
           "================ In-Memory OCR Test Start ================" | Out-File -FilePath $logFile -Encoding utf8
 
           function Write-TestLog {
@@ -58,17 +58,23 @@ jobs:
               $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
               $writer = New-Object Windows.Storage.Streams.DataWriter($stream)
               $writer.WriteBytes($bytes)
-              $writer.StoreAsync().GetResults() | Out-Null
-              $writer.FlushAsync().GetResults() | Out-Null
+
+              # 使用 COM 异步对象的标准 await 提取语法
+              $null = $writer.StoreAsync().GetAwaiter().GetResult()
+              $null = $writer.FlushAsync().GetAwaiter().GetResult()
               $writer.DetachStream()
               $stream.Seek(0)
 
-              $decoder = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).GetResults()
-              $softBmp = $decoder.GetSoftwareBitmapAsync().GetResults()
+              $decoder = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).GetAwaiter().GetResult()
+              $softBmp = $decoder.GetSoftwareBitmapAsync().GetAwaiter().GetResult()
 
               $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+              if (-not $engine) {
+                  $lang = New-Object Windows.Globalization.Language("en-US")
+                  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+              }
 
-              $ocrResult = $engine.RecognizeAsync($softBmp).GetResults()
+              $ocrResult = $engine.RecognizeAsync($softBmp).GetAwaiter().GetResult()
               $ocrText = $ocrResult.Text
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
