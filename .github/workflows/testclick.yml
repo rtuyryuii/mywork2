@@ -1,0 +1,87 @@
+name: Test Windows GUI Click
+
+
+
+on:
+
+  workflow_dispatch:
+
+
+
+permissions:
+
+  contents: write
+
+
+
+jobs:
+
+  test-gui:
+
+    runs-on: windows-latest
+
+
+
+    steps:
+
+      - name: Checkout Code
+
+        uses: actions/checkout@v4
+
+
+
+      - name: Set up Python
+
+        uses: actions/setup-python@v5
+
+        with:
+
+          python-version: '3.10'
+
+
+
+      - name: Install Dependencies
+
+        run: |
+
+          pip install pyautogui pillow
+
+
+
+      - name: Run GUI Test Script
+
+        run: |
+
+          python testclick.py
+
+
+
+      - name: Upload Screenshot Artifact
+
+        if: always()
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: gui-test-screenshot
+
+          path: abcd1234.png
+
+
+
+      - name: Commit and Push Screenshot to Repository
+
+        if: always()
+
+        run: |
+
+          git config --global user.name "github-actions[bot]"
+
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add abcd1234.png
+
+          git commit -m "chore: add screenshot abcd1234.png" || echo "No changes to commit"
+
+          git push

@@ -1,0 +1,37 @@
+name: Test OCR Only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-ocr:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip install pyautogui pillow rapidocr_onnxruntime
+
+      - name: Run OCR Test Script
+        run: |
+          python ocr_test.py
+
+      - name: Commit and Push Log to Repository
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyautogui_chrome_test.log
+          git commit -m "chore: upload OCR test log" || echo "No log changes to commit"
+          git push
