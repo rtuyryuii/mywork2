@@ -53,7 +53,9 @@ jobs:
               Write-TestLog "Compiling Native C# Memory OCR Bridge from file..."
               $csPath = "$PWD\\.github\\scripts\\OcrBridge.cs"
               $code = Get-Content -Path $csPath -Raw
-              Add-Type -TypeDefinition $code -CompilerOptions "/target:library" -IgnoreWarnings
+              
+              # 兼容 PowerShell 7+ 的 Add-Type 编译语法
+              Add-Type -TypeDefinition $code -Language CSharp
 
               Write-TestLog "Executing C# WinRT Memory OCR Bridge..."
               $ocrText = [MemoryOcrBridge]::DoOcrFromBytes($bytes)
