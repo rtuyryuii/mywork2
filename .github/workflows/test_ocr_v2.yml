@@ -25,16 +25,6 @@ jobs:
               $logLine | Out-File -FilePath $logFile -Append -Encoding utf8
           }
 
-          function Await-WinRT {
-              param($asyncOp)
-              $task = [System.WindowsRuntimeSystemExtensions]::AsTask($asyncOp)
-              $task.Wait()
-              if ($task.Exception) { throw $task.Exception }
-              if ($task.GetType().IsGenericType) {
-                  return $task.Result
-              }
-          }
-
           try {
               Write-TestLog "Launching Microsoft Edge..."
               Start-Process "msedge.exe" -ArgumentList "https://account.microsoft.com/account", "--start-maximized"
@@ -58,36 +48,24 @@ jobs:
               $bytes = $ms.ToArray()
               $ms.Dispose()
 
-              Write-TestLog "Screen captured into memory. Byte array length: $($bytes.Length) bytes."
+              $tmpImgPath = "$PWD\\temp_screen.png"
+              [System.IO.File]::WriteAllBytes($tmpImgPath, $bytes)
+              Write-TestLog "Screen captured into memory. Written to temporary buffer: $($bytes.Length) bytes."
 
-              Write-TestLog "Loading WinRT OCR Assemblies into PowerShell..."
-              $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType=WindowsRuntime]
-              $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
-              $null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType=WindowsRuntime]
-              $null = [Windows.Globalization.Language, Windows.Globalization, ContentType=WindowsRuntime]
-              $null = [System.WindowsRuntimeSystemExtensions]
+              Write-TestLog "Locating csc.exe compiler and WinRT reference assemblies..."
+              $cscPath = Get-ChildItem "C:\\Windows\\Microsoft.NET\\Framework64" -Filter "csc.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+              $winmdPath = "C:\\Windows\\System32\\WinMetadata\\Windows.Foundation.winmd"
 
-              Write-TestLog "Converting byte array to WinRT IRandomAccessStream..."
-              $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
-              $writer = New-Object Windows.Storage.Streams.DataWriter($stream)
-              $writer.WriteBytes($bytes)
-              $null = Await-WinRT ($writer.StoreAsync())
-              $null = Await-WinRT ($writer.FlushAsync())
-              $writer.DetachStream()
-              $stream.Seek(0)
+              Write-TestLog "Compiling C# WinRT OCR CLI Tool..."
+              $csSource = "$PWD\\.github\\scripts\\OcrCli.cs"
+              $exeOutput = "$PWD\\OcrCli.exe"
 
-              Write-TestLog "Decoding image and executing WinRT OCR Engine..."
-              $decoder = Await-WinRT ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
-              $softBmp = Await-WinRT ($decoder.GetSoftwareBitmapAsync())
+              & $cscPath /target:exe /out:$exeOutput /r:$winmdPath /r:"C:\\Windows\\System32\\WinMetadata\\Windows.Media.winmd" /r:"C:\\Windows\\System32\\WinMetadata\\Windows.Graphics.winmd" /r:"C:\\Windows\\System32\\WinMetadata\\Windows.Globalization.winmd" /r:"System.Runtime.WindowsRuntime.dll" $csSource
 
-              $lang = New-Object Windows.Globalization.Language("en-US")
-              $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
-              if (-not $engine) {
-                  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-              }
+              Write-TestLog "Executing Compiled WinRT OCR CLI..."
+              $ocrText = & $exeOutput $tmpImgPath
 
-              $ocrResult = Await-WinRT ($engine.RecognizeAsync($softBmp))
-              $ocrText = $ocrResult.Text
+              Remove-Item -Path $tmpImgPath -Force -ErrorAction SilentlyContinue
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
               if ($ocrText) {
