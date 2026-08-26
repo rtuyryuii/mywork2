@@ -50,32 +50,55 @@ jobs:
 
               Write-TestLog "Screen captured into memory. Byte array length: $($bytes.Length) bytes."
 
-              Write-TestLog "Loading Windows.Media.Ocr directly via WinRT..."
-              [Windows.Media.Ocr.OcrEngine, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime] | Out-Null
-              [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime] | Out-Null
-              [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Foundation.UniversalApiContract, ContentType = WindowsRuntime] | Out-Null
+              Write-TestLog "Compiling Native C# WinRT OCR Helper for PowerShell 5.1..."
+              $code = @"
+              using System;
+              using System.IO;
+              using System.Threading.Tasks;
+              using Windows.Globalization;
+              using Windows.Graphics.Imaging;
+              using Windows.Media.Ocr;
+              using Windows.Storage.Streams;
 
-              $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
-              $writer = New-Object Windows.Storage.Streams.DataWriter($stream)
-              $writer.WriteBytes($bytes)
+              public class NativeOcr
+              {
+                  public static string Recognize(byte[] imageBytes)
+                  {
+                      return Task.Run(async () =>
+                      {
+                          using (var ms = new InMemoryRandomAccessStream())
+                          {
+                              using (var writer = new DataWriter(ms.GetOutputStreamAt(0)))
+                              {
+                                  writer.WriteBytes(imageBytes);
+                                  await writer.StoreAsync();
+                                  await writer.FlushAsync();
+                                  writer.DetachStream();
+                              }
+                              ms.Seek(0);
 
-              # 使用 COM 异步对象的标准 await 提取语法
-              $null = $writer.StoreAsync().GetAwaiter().GetResult()
-              $null = $writer.FlushAsync().GetAwaiter().GetResult()
-              $writer.DetachStream()
-              $stream.Seek(0)
+                              var decoder = await BitmapDecoder.CreateAsync(ms);
+                              var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
 
-              $decoder = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).GetAwaiter().GetResult()
-              $softBmp = $decoder.GetSoftwareBitmapAsync().GetAwaiter().GetResult()
+                              var engine = OcrEngine.TryCreateFromUserProfileLanguages() 
+                                        ?? OcrEngine.TryCreateFromLanguage(new Language("en-US"));
 
-              $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
-              if (-not $engine) {
-                  $lang = New-Object Windows.Globalization.Language("en-US")
-                  $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
+                              var result = await engine.RecognizeAsync(softwareBitmap);
+                              return result.Text;
+                          }
+                      }).GetAwaiter().GetResult();
+                  }
               }
+"@
+              $winmdFoundation = "C:\Windows\System32\WinMetadata\Windows.Foundation.winmd"
+              $winmdMedia = "C:\Windows\System32\WinMetadata\Windows.Media.winmd"
+              $winmdGraphics = "C:\Windows\System32\WinMetadata\Windows.Graphics.winmd"
+              $winmdGlob = "C:\Windows\System32\WinMetadata\Windows.Globalization.winmd"
 
-              $ocrResult = $engine.RecognizeAsync($softBmp).GetAwaiter().GetResult()
-              $ocrText = $ocrResult.Text
+              Add-Type -TypeDefinition $code -ReferencedAssemblies $winmdFoundation, $winmdMedia, $winmdGraphics, $winmdGlob, "System.Runtime.WindowsRuntime.dll"
+
+              Write-TestLog "Executing Native C# WinRT OCR..."
+              $ocrText = [NativeOcr]::Recognize($bytes)
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
               if ($ocrText) {
