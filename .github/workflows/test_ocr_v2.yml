@@ -25,6 +25,16 @@ jobs:
               $logLine | Out-File -FilePath $logFile -Append -Encoding utf8
           }
 
+          function Await-WinRT {
+              param($asyncOp)
+              $task = [System.WindowsRuntimeSystemExtensions]::AsTask($asyncOp)
+              $task.Wait()
+              if ($task.Exception) { throw $task.Exception }
+              if ($task.GetType().IsGenericType) {
+                  return $task.Result
+              }
+          }
+
           try {
               Write-TestLog "Launching Microsoft Edge..."
               Start-Process "msedge.exe" -ArgumentList "https://account.microsoft.com/account", "--start-maximized"
@@ -55,22 +65,20 @@ jobs:
               $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime]
               $null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Storage.Streams, ContentType=WindowsRuntime]
               $null = [Windows.Globalization.Language, Windows.Globalization, ContentType=WindowsRuntime]
+              $null = [System.WindowsRuntimeSystemExtensions]
 
               Write-TestLog "Converting byte array to WinRT IRandomAccessStream..."
               $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
               $writer = New-Object Windows.Storage.Streams.DataWriter($stream)
               $writer.WriteBytes($bytes)
-              $null = $writer.StoreAsync().AsTask().GetAwaiter().GetResult()
-              $null = $writer.FlushAsync().AsTask().GetAwaiter().GetResult()
+              $null = Await-WinRT ($writer.StoreAsync())
+              $null = Await-WinRT ($writer.FlushAsync())
               $writer.DetachStream()
               $stream.Seek(0)
 
               Write-TestLog "Decoding image and executing WinRT OCR Engine..."
-              $decoderTask = [Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream).AsTask()
-              $decoder = $decoderTask.GetAwaiter().GetResult()
-
-              $softBmpTask = $decoder.GetSoftwareBitmapAsync().AsTask()
-              $softBmp = $softBmpTask.GetAwaiter().GetResult()
+              $decoder = Await-WinRT ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream))
+              $softBmp = Await-WinRT ($decoder.GetSoftwareBitmapAsync())
 
               $lang = New-Object Windows.Globalization.Language("en-US")
               $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage($lang)
@@ -78,8 +86,7 @@ jobs:
                   $engine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
               }
 
-              $ocrResultTask = $engine.RecognizeAsync($softBmp).AsTask()
-              $ocrResult = $ocrResultTask.GetAwaiter().GetResult()
+              $ocrResult = Await-WinRT ($engine.RecognizeAsync($softBmp))
               $ocrText = $ocrResult.Text
 
               Write-TestLog "----------------- OCR RECOGNIZED TEXT -----------------"
